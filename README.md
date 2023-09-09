@@ -1,26 +1,31 @@
 # react-native-multipeer-connectivity
 
-react-native-multipeer-connectivit
+working, not published yet
 
 ## Installation
 
 ```sh
 npm install react-native-multipeer-connectivity
+
+# ios
+npx pod-install
 ```
 
 ## Usage
 
-```js
-import { multiply } from 'react-native-multipeer-connectivity';
-
-// ...
-
-const result = await multiply(3, 7);
+Update your `Info.plist` by adding:
+```text
+<key>NSLocalNetworkUsageDescription</key>
+<string>[a]</string>
+<key>NSBonjourServices</key>
+<array>
+    <string>_[b]._tcp</string>
+</array>
 ```
 
-## Contributing
 
-See the [contributing guide](CONTRIBUTING.md) to learn how to contribute to the repository and the development workflow.
+cite
+https://github.com/lwansbrough/react-native-multipeer/blob/master/MultipeerConnection.js#L4
 
 ## License
 

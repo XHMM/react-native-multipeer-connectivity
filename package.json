@@ -1,7 +1,7 @@
 {
   "name": "react-native-multipeer-connectivity",
   "version": "0.1.0",
-  "description": "react-native-multipeer-connectivit",
+  "description": "react-native-multipeer-connectivity",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
   "types": "lib/typescript/index.d.ts",
