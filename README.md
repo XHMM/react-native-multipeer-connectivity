@@ -18,8 +18,8 @@ Then update your `Info.plist` by adding:
     <string>_[b]._tcp</string>
 </array>
 ```
-`[a]` will be used in the system permission request dialog
-`[b]` is the service name that will be used in our api
+- `[a]` will be used in the system permission request dialog
+- `[b]` is the service name that will be used in our api
 
 
 ## API
@@ -27,7 +27,8 @@ Then update your `Info.plist` by adding:
 import { initSession } from 'react-native-multipeer-connectivity';
 const session = initSession(options);
 ```
-| Copied from the generated .d.ts file:
+
+> Copied from the generated .d.ts file:
 
 ```ts
 type RNPeerID = string;
