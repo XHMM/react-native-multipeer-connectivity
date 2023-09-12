@@ -13,10 +13,10 @@ RCT_EXTERN_METHOD(browse:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(advertize:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-RCT_EXTERN_METHOD(stopBrowse:(RCTPromiseResolveBlock)resolve
+RCT_EXTERN_METHOD(stopBrowsing:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-RCT_EXTERN_METHOD(stopAdvertize:(RCTPromiseResolveBlock)resolve
+RCT_EXTERN_METHOD(stopAdvertizing:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 RCT_EXTERN_METHOD(invite:(NSDictionary)options

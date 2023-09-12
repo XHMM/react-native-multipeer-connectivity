@@ -1,9 +1,10 @@
 import MultipeerConnectivity
 
+// Use `hash` property of `MCPeerID` instance for equality checking
 typealias RNPeerID = String
 
 extension MCPeerID {
-  func toDict(_ rnPeerID: RNPeerID) -> NSDictionary {
+  func toRNPeer(_ rnPeerID: RNPeerID) -> NSDictionary {
       return NSDictionary(dictionary: [
       "id": rnPeerID,
       "displayName": self.displayName
@@ -13,14 +14,11 @@ extension MCPeerID {
 
 @objc(MultipeerConnectivity)
 class MultipeerConnectivity: RCTEventEmitter {
-    static var INTERNAL_KEY_RN_PEER_ID = "__mpc_rn_peer_id";
-    static var INTERNAL_KEY_RN_CTX_KEY = "__mpc_context_string"
-
     private var hasListeners = false
 
     private var invitationMap: Dictionary<String, (Bool, MCSession?) -> Void> = Dictionary()
     private var peerIds: [(RNPeerID, MCPeerID)] = []
-    private var peerID: (RNPeerID?, MCPeerID?)
+    private var peerID: (RNPeerID, MCPeerID)?
     private var session: MCSession?
     private var advertiser: MCNearbyServiceAdvertiser?
     private var browser: MCNearbyServiceBrowser?
@@ -30,6 +28,7 @@ class MultipeerConnectivity: RCTEventEmitter {
     }
 
     deinit {
+        session?.disconnect()
         advertiser?.stopAdvertisingPeer()
         browser?.stopBrowsingForPeers()
     }
@@ -67,19 +66,14 @@ class MultipeerConnectivity: RCTEventEmitter {
         let serviceType = (options["serviceType"] as! String)
         let discoveryInfo = (options["discoveryInfo"] as? NSDictionary ?? nil)
 
-        let rnPeerID = UUID().uuidString;
-        let discoveryInfoWithId = NSMutableDictionary(dictionary: [
-            Self.INTERNAL_KEY_RN_PEER_ID: rnPeerID
-        ])
-        if let discoveryInfo = discoveryInfo {
-            discoveryInfoWithId.addEntries(from: discoveryInfo as! [String : String])
-        }
-
         let peerID = MCPeerID(displayName: displayName);
+        let rnPeerID = String(peerID.hash);
+
         self.peerID = (rnPeerID, peerID);
         session = MCSession(peer: peerID)
-        advertiser = MCNearbyServiceAdvertiser(peer: peerID, discoveryInfo: (discoveryInfoWithId as! [String : String]), serviceType: serviceType);
+        advertiser = MCNearbyServiceAdvertiser(peer: peerID, discoveryInfo: discoveryInfo as? [String : String], serviceType: serviceType);
         browser = MCNearbyServiceBrowser(peer: peerID, serviceType: serviceType)
+
         advertiser!.delegate = self
         browser!.delegate = self
         session!.delegate = self
@@ -104,14 +98,14 @@ class MultipeerConnectivity: RCTEventEmitter {
     }
 
     @objc
-    func stopBrowse(_ resolve: RCTPromiseResolveBlock,
+    func stopBrowsing(_ resolve: RCTPromiseResolveBlock,
                 rejecter reject: RCTPromiseRejectBlock) {
         browser?.stopBrowsingForPeers()
         resolve(nil)
     }
 
     @objc
-    func stopAdvertize(_ resolve: RCTPromiseResolveBlock,
+    func stopAdvertizing(_ resolve: RCTPromiseResolveBlock,
                    rejecter reject: RCTPromiseRejectBlock) {
         advertiser?.stopAdvertisingPeer()
         resolve(nil)
@@ -122,21 +116,12 @@ class MultipeerConnectivity: RCTEventEmitter {
                  rejecter reject: RCTPromiseRejectBlock) {
         let rnPeerID = (options["peerID"] as! String)
         let timeout = (options["timeout"] as! NSNumber)
-        let contextString = (options["contextString"] as? String) // json string
+        let contextString = (options["contextString"] as? String) // json string from rn-side
 
-        let contextWithInternal = NSMutableDictionary(dictionary: [
-          Self.INTERNAL_KEY_RN_PEER_ID: self.peerID.0
-        ])
-        if let contextString = contextString {
-          contextWithInternal.addEntries(from: [
-            Self.INTERNAL_KEY_RN_CTX_KEY: contextString
-          ])
-        }
-
-        if let session = session, let peerID = peerIds.first(where: {
+        if let peerID = peerIds.first(where: {
             $0.0 == rnPeerID
         }) {
-            browser?.invitePeer(peerID.1, to: session, withContext: jsonToData(json: contextWithInternal), timeout: TimeInterval(truncating: timeout))
+            browser?.invitePeer(peerID.1, to: session!, withContext: contextString?.data(using: .utf8), timeout: TimeInterval(truncating: timeout))
             resolve(nil)
         } else {
             reject("ERR_FATAL", "Not found target peer, this should not happen", nil);
@@ -182,7 +167,6 @@ class MultipeerConnectivity: RCTEventEmitter {
     }
 }
 
-
 extension MultipeerConnectivity: MCNearbyServiceAdvertiserDelegate {
     func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
         sendEvent(withName: "onStartAdvertisingError", body: [
@@ -191,30 +175,19 @@ extension MultipeerConnectivity: MCNearbyServiceAdvertiserDelegate {
     }
 
     func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didReceiveInvitationFromPeer peerID: MCPeerID, withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
-        if let context = context {
-            let json = dataToJSON(data: context) as? [String: Any];
-            let fromRNPeerID = json?[Self.INTERNAL_KEY_RN_PEER_ID] as? String;
-            let contextString = json?[Self.INTERNAL_KEY_RN_CTX_KEY] as? String;
-          if let fromRNPeerID = fromRNPeerID {
-            if let peer = peerIds.first(where: {$0.0 == fromRNPeerID}) {
-            } else {
-                peerIds.append((fromRNPeerID, peerID))
-            }
-            invitationMap[fromRNPeerID] = invitationHandler;
-            sendEvent(withName: "onReceivedPeerInvitation", body: [
-                "invitationId": fromRNPeerID,
-                "peer": peerID.toDict(fromRNPeerID),
-                "contextString": contextString != nil ? contextString : nil,
-            ])
-            return;
-          } else {
-            print("Invitation data didn't contain peer id for react-native, this should not happen");
-          }
-        } else {
-          print("Invitation data was nil, this should not happen");
-        }
+        let fromRNPeerID = String(peerID.hash);
 
-        invitationHandler(false, self.session);
+        if let peerID = peerIds.first(where: {$0.0 == fromRNPeerID}) {
+        } else {
+            peerIds.append((fromRNPeerID, peerID))
+        }
+        invitationMap[fromRNPeerID] = invitationHandler;
+        sendEvent(withName: "onReceivedPeerInvitation", body: [
+            "invitationId": fromRNPeerID,
+            "peer": peerID.toRNPeer(fromRNPeerID),
+            "contextString": context != nil ? String(decoding: context!, as: UTF8.self) : nil,
+        ])
+        return;
     }
 }
 
@@ -226,18 +199,12 @@ extension MultipeerConnectivity: MCNearbyServiceBrowserDelegate {
     }
 
     func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID, withDiscoveryInfo info: [String: String]?) {
-        if let info = info {
-            let rnPeerID = info[Self.INTERNAL_KEY_RN_PEER_ID]!;
-            peerIds.append((rnPeerID, peerID));
-            let infoWithoutInternal = NSMutableDictionary(dictionary: info)
-            infoWithoutInternal.removeObject(forKey: Self.INTERNAL_KEY_RN_PEER_ID)
-            sendEvent(withName: "onFoundPeer", body: [
-                "peer": peerID.toDict(rnPeerID),
-                "discoveryInfo": infoWithoutInternal
-            ])
-        } else {
-            print("Discovery info was empty, this should not happen");
-        }
+        let rnPeerID = String(peerID.hash);
+        peerIds.append((rnPeerID, peerID));
+        sendEvent(withName: "onFoundPeer", body: [
+            "peer": peerID.toRNPeer(rnPeerID),
+            "discoveryInfo": info != nil ? info : nil
+        ])
     }
 
     func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
@@ -247,7 +214,7 @@ extension MultipeerConnectivity: MCNearbyServiceBrowserDelegate {
             let peer = peerIds[idx];
             peerIds.remove(at: idx);
             sendEvent(withName: "onLostPeer", body: [
-                "peer": peerID.toDict(peer.0),
+                "peer": peerID.toRNPeer(peer.0),
             ])
         }
     }
@@ -259,7 +226,7 @@ extension MultipeerConnectivity: MCSessionDelegate {
             $0.1 == peerID
         }) {
             sendEvent(withName: "onPeerStateChanged", body: [
-                "peer": peerID.toDict(peer.0),
+                "peer": peerID.toRNPeer(peer.0),
                 "state": state.rawValue
             ])
         }
@@ -270,7 +237,7 @@ extension MultipeerConnectivity: MCSessionDelegate {
             $0.1 == peerID
         }) {
             sendEvent(withName: "onReceivedText", body: [
-                "peer": peerID.toDict(peer.0),
+                "peer": peerID.toRNPeer(peer.0),
                 "text": String(data: data, encoding: .utf8)
             ])
         }
@@ -287,23 +254,5 @@ extension MultipeerConnectivity: MCSessionDelegate {
     func session(_ session: MCSession, didFinishReceivingResourceWithName resourceName: String, fromPeer peerID: MCPeerID, at localURL: URL?, withError error: Error?) {
         // TODO
     }
-}
-
-func dataToJSON(data: Data) -> Any? {
-   do {
-       return try JSONSerialization.jsonObject(with: data, options: .mutableContainers)
-   } catch let jsonErr {
-       print("convert data to json failed:", jsonErr)
-   }
-   return nil
-}
-
-func jsonToData(json: Any) -> Data? {
-    do {
-        return try JSONSerialization.data(withJSONObject: json, options: JSONSerialization.WritingOptions.prettyPrinted)
-    } catch let jsonErr {
-        print("convert json to data failed:", jsonErr)
-    }
-    return nil;
 }
 

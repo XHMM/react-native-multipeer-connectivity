@@ -1,3 +1,4 @@
+import type { EmitterSubscription } from 'react-native';
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 
 const LINKING_ERROR =
@@ -18,6 +19,7 @@ const NativeModule = NativeModules.MultipeerConnectivity
     );
 
 type RNPeerID = string;
+
 export interface RNPeer {
   id: RNPeerID;
   displayName: string;
@@ -29,15 +31,20 @@ export enum PeerState {
   connected = 2,
 }
 
-export function initSession(options: {
+export interface InitSessionOptions {
   /**
+   * This name will be used for showing when other peers browsed you.
    * The peer’s name must be no longer than 63 bytes in UTF-8 encoding.
    */
   displayName: string;
+
+  /**
+   * This is the name corresponding to the value defined in Info.plist
+   */
   serviceType: string;
 
   /**
-   * Data made available to browsers.
+   * Custom data available to browsers in the `onFoundPeer` event
    *
    * Limitations:
    *  - Object keys cannot contain an equals sign.
@@ -47,8 +54,121 @@ export function initSession(options: {
    * Check https://developer.apple.com/documentation/multipeerconnectivity/mcnearbyserviceadvertiser/1407102-init for detailed explanation.
    */
   discoveryInfo?: Record<string, string>;
-}) {
-  // TODO: add data validation to prevent app crashed?
+}
+
+export interface MPCSession {
+  peerID: string;
+
+  /**
+   * Start browsing nearby peers which are advertizing
+   */
+  browse(): Promise<void>;
+
+  /**
+   * Start advertizing so it can be bound by the peers which are browsing
+   */
+  advertize(): Promise<void>;
+
+  /**
+   * Stop browsing
+   */
+  stopBrowsing(): Promise<void>;
+
+  /**
+   * Stop advetizing
+   */
+  stopAdvertizing(): Promise<void>;
+
+  /**
+   * Invite the peer you found
+   */
+  invite(peerID: string): Promise<void>;
+  invite(options: {
+    peerID: string;
+    /**
+     * Invite timeout seconds, default 30s
+     */
+    timeout?: number;
+    /**
+     * Context data sent to `onReceivedPeerInvitation` event
+     */
+    context?: Record<string, any>;
+  }): Promise<void>;
+
+  /**
+   * Send utf-8 text to target peer
+   * @param id
+   * @param text
+   */
+  sendText(id: RNPeerID, text: string): Promise<void>;
+
+  /**
+   * Disconnect all peers
+   */
+  disconnect(): Promise<void>;
+
+  onStartAdvertisingError(
+    fn: (event: { text: string }) => void
+  ): EmitterSubscription;
+
+  /**
+   * When you received a invitation by other peer using `invite`, this event will be called
+   * @param fn
+   */
+  onReceivedPeerInvitation(
+    fn: (event: {
+      peer: RNPeer;
+      context?: Record<string, any>;
+      /**
+       * You need to call this function to decide to accept(true) or reject(true) the invitation
+       * @param accept
+       */
+      handler: (accept: boolean) => Promise<void>;
+    }) => void
+  ): EmitterSubscription;
+
+  onStartBrowsingError(
+    fn: (event: { text: string }) => void
+  ): EmitterSubscription;
+
+  /**
+   * When you (re-)call `advertize` and found a peer, this event will be called, even if the peer has found before
+   */
+  onFoundPeer(
+    fn: (event: {
+      peer: RNPeer;
+      discoveryInfo?: Record<string, string>;
+    }) => void
+  ): EmitterSubscription;
+
+  /**
+   * Called when the peer was disconnected, for example, the app was in background
+   * @param fn
+   */
+  onLostPeer(fn: (event: { peer: RNPeer }) => void): EmitterSubscription;
+
+  /**
+   * Called when the peer state changed
+   * @param fn
+   */
+  onPeerStateChanged(
+    fn: (event: { peer: RNPeer; state: PeerState }) => void
+  ): EmitterSubscription;
+
+  /**
+   * Called when you received a utf-8 text
+   * @param fn
+   */
+  onReceivedText(
+    fn: (event: { peer: RNPeer; text: string }) => void
+  ): EmitterSubscription;
+}
+
+/**
+ * Call this function to initiate a session
+ * @param options
+ */
+export function initSession(options: InitSessionOptions): MPCSession {
   const { peerID } = NativeModule.initSession({
     displayName: options.displayName,
     serviceType: options.serviceType,
@@ -57,42 +177,36 @@ export function initSession(options: {
     peerID: string;
   };
 
-  const browse = async () => {
+  const browse: MPCSession['browse'] = async () => {
     await NativeModule.browse();
   };
 
-  const advertize = async () => {
+  const advertize: MPCSession['advertize'] = async () => {
     await NativeModule.advertize();
   };
 
-  const stopBrowse = async () => {
-    await NativeModule.stopBrowse();
+  const stopBrowsing: MPCSession['stopBrowsing'] = async () => {
+    await NativeModule.stopBrowsing();
   };
 
-  const stopAdvertize = async () => {
-    await NativeModule.stopAdvertize();
+  const stopAdvertizing: MPCSession['stopAdvertizing'] = async () => {
+    await NativeModule.stopAdvertizing();
   };
 
-  const invite = async (
-    options:
-      | {
-          peerID: string;
-          timeout?: number;
-          context?: Record<string, any>;
-        }
-      | string
-  ) => {
-    if (typeof options === 'string') {
+  const invite: MPCSession['invite'] = async (invitationOptions) => {
+    if (typeof invitationOptions === 'string') {
       await NativeModule.invite({
-        peerID: options,
+        peerID: invitationOptions,
         timeout: 30,
         context: null,
       });
     } else {
       await NativeModule.invite({
-        peerID: options.peerID,
-        timeout: options.timeout ?? 30,
-        contextString: options.context ? JSON.stringify(options.context) : null,
+        peerID: invitationOptions.peerID,
+        timeout: invitationOptions.timeout ?? 30,
+        contextString: invitationOptions.context
+          ? JSON.stringify(invitationOptions.context)
+          : null,
       });
     }
   };
@@ -104,29 +218,27 @@ export function initSession(options: {
     await NativeModule.processInvitation(options);
   };
 
-  const sendText = async (id: RNPeerID, text: string) => {
+  const sendText: MPCSession['sendText'] = async (id, text) => {
     await NativeModule.sendText({
       peerID: id,
       text,
     });
   };
 
-  const disconnect = async () => {
+  const disconnect: MPCSession['disconnect'] = async () => {
     await NativeModule.disconnect();
   };
 
   const eventEmitter = new NativeEventEmitter(NativeModule);
 
-  const onStartAdvertisingError = (fn: (event: { text: string }) => void) => {
+  const onStartAdvertisingError: MPCSession['onStartAdvertisingError'] = (
+    fn
+  ) => {
     return eventEmitter.addListener('onStartAdvertisingError', fn);
   };
 
-  const onReceivedPeerInvitation = (
-    fn: (event: {
-      peer: RNPeer;
-      context?: Record<string, any>;
-      handler: (accept: boolean) => Promise<void>;
-    }) => void
+  const onReceivedPeerInvitation: MPCSession['onReceivedPeerInvitation'] = (
+    fn
   ) => {
     return eventEmitter.addListener('onReceivedPeerInvitation', (event) => {
       fn({
@@ -144,35 +256,23 @@ export function initSession(options: {
     });
   };
 
-  const onStartBrowsingError = (fn: (event: { text: string }) => void) => {
+  const onStartBrowsingError: MPCSession['onStartBrowsingError'] = (fn) => {
     return eventEmitter.addListener('onStartBrowsingError', fn);
   };
 
-  /**
-   * When you (re-)call `advertize` and found a peer, this event will be called, even if the peer was found before
-   */
-  const onFoundPeer = (
-    fn: (event: {
-      peer: RNPeer;
-      discoveryInfo?: Record<string, string>;
-    }) => void
-  ) => {
+  const onFoundPeer: MPCSession['onFoundPeer'] = (fn) => {
     return eventEmitter.addListener('onFoundPeer', fn);
   };
 
-  const onLostPeer = (fn: (event: { peer: RNPeer }) => void) => {
+  const onLostPeer: MPCSession['onLostPeer'] = (fn) => {
     return eventEmitter.addListener('onLostPeer', fn);
   };
 
-  const onPeerStateChanged = (
-    fn: (event: { peer: RNPeer; state: PeerState }) => void
-  ) => {
+  const onPeerStateChanged: MPCSession['onPeerStateChanged'] = (fn) => {
     return eventEmitter.addListener('onPeerStateChanged', fn);
   };
 
-  const onReceivedText = (
-    fn: (event: { peer: RNPeer; text: string }) => void
-  ) => {
+  const onReceivedText: MPCSession['onReceivedText'] = (fn) => {
     return eventEmitter.addListener('onReceivedText', fn);
   };
 
@@ -180,8 +280,8 @@ export function initSession(options: {
     peerID,
     browse,
     advertize,
-    stopBrowse,
-    stopAdvertize,
+    stopBrowsing,
+    stopAdvertizing,
     invite,
     sendText,
     disconnect,

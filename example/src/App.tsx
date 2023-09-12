@@ -52,6 +52,7 @@ export default function App() {
     const r3 = session.onFoundPeer((ev) => {
       setPeers(
         produce((draft) => {
+          // onFoundPeer will be called even if the peer found before when you re-advertize
           if (!draft[ev.peer.id]) {
             draft[ev.peer.id] = {
               peer: ev.peer,
@@ -100,8 +101,8 @@ export default function App() {
     });
 
     return () => {
-      session.stopAdvertize();
-      session.stopBrowse();
+      session.stopAdvertizing();
+      session.stopBrowsing();
       r1.remove();
       r2.remove();
       r3.remove();
@@ -131,7 +132,6 @@ export default function App() {
             const name = ev.nativeEvent.text;
             setDisplayName(name);
 
-            console.log('run init session');
             const session = initSession({
               displayName: name,
               serviceType: 'demo',
@@ -151,14 +151,12 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <Text>id: {peerID}</Text>
-      <Text>display name: {displayName}</Text>
-
+      <Text>my id: {peerID}</Text>
       {isBrowsing ? (
         <Button
           title={'stop browse'}
           onPress={() => {
-            session?.stopBrowse();
+            session?.stopBrowsing();
             setIsBrowsing(false);
           }}
         />
@@ -175,7 +173,7 @@ export default function App() {
         <Button
           title={'stop advertize'}
           onPress={() => {
-            session?.stopAdvertize();
+            session?.stopAdvertizing();
             setIsAdvertizing(false);
           }}
         />
@@ -211,13 +209,7 @@ export default function App() {
             >
               <Pressable
                 onPress={() => {
-                  session?.invite({
-                    peerID: id,
-                    context: {
-                      myContextName: displayName,
-                    },
-                    timeout: 1,
-                  });
+                  session?.invite(id);
                 }}
               >
                 <Text>
