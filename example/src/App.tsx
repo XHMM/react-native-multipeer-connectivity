@@ -12,10 +12,11 @@ import {
   initSession,
   PeerState,
   RNPeer,
+  initSessionJSI,
 } from 'react-native-multipeer-connectivity';
 import { produce } from 'immer';
 
-export default function App() {
+export function App2() {
   const [displayName, setDisplayName] = useState('');
   const [peerID, setPeerID] = useState('');
   const [isBrowsing, setIsBrowsing] = useState(false);
@@ -245,6 +246,18 @@ export default function App() {
           );
         })}
       </View>
+    </View>
+  );
+}
+
+export default function App() {
+  React.useEffect(() => {
+    initSessionJSI();
+  }, []);
+
+  return (
+    <View style={styles.container}>
+      <Text>ha</Text>
     </View>
   );
 }

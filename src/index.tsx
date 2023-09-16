@@ -295,3 +295,9 @@ export function initSession(options: InitSessionOptions): MPCSession {
     onReceivedText,
   };
 }
+
+export function initSessionJSI(): void {
+  NativeModule.install();
+  const fn = global.initSession;
+  console.log(typeof fn);
+}
